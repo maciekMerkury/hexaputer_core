@@ -8,8 +8,7 @@ fn consty_ptr(comptime collection: type) type {
         @compileError("arrays cannot be indexed");
     };
 
-    const T = if (info.Pointer.size == .One) @typeInfo(info.Pointer.child).Array.child
-                else info.Pointer.child;
+    const T = if (info.Pointer.size == .One) @typeInfo(info.Pointer.child).Array.child else info.Pointer.child;
 
     var t = @typeInfo(*T);
 
@@ -26,14 +25,14 @@ pub inline fn get(slice: anytype, idx: usize) error{OutOfBounds}!consty_ptr(@Typ
 test "utils get" {
     const testing = std.testing;
 
-    var ar: [3]u8 = .{0, 1, 2};
+    var ar: [3]u8 = .{ 0, 1, 2 };
 
     const a = try get(ar[0..], 0);
     try std.testing.expect(a.* == ar[0]);
     const b = get(&ar, 15);
     try std.testing.expectError(error.OutOfBounds, b);
 
-    const e: [3]u8 = .{0, 1, 2};
+    const e: [3]u8 = .{ 0, 1, 2 };
     const c = try get(&e, 1);
     try testing.expect(c.* == e[1]);
 }

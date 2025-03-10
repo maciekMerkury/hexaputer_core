@@ -132,7 +132,7 @@ pub const BinaryInstruction = packed struct {
         src: packed union { reg: cpu.Register, constant: cpu.Word },
 
         pub fn bit_size(self: @This()) usize {
-var size: usize = @bitSizeOf(@TypeOf(self.dst)) + @bitSizeOf(@TypeOf(self.is_reg));
+            var size: usize = @bitSizeOf(@TypeOf(self.dst)) + @bitSizeOf(@TypeOf(self.is_reg));
             size += if (self.is_reg) @bitSizeOf(@TypeOf(self.src.reg)) else @bitSizeOf(@TypeOf(self.src.constant));
             return size;
         }
@@ -148,7 +148,7 @@ test "BinaryInstruction byte sizes" {
     const testing = std.testing;
     const expectEqual = testing.expectEqual;
 
-    var inst = BinaryInstruction { .type = .Not, .data = .{ .reg = .R0 } };
+    var inst = BinaryInstruction{ .type = .Not, .data = .{ .reg = .R0 } };
 
     try expectEqual(@as(usize, 24), @bitSizeOf(BinaryInstruction));
     try expectEqual(@as(usize, 1), inst.byte_size());

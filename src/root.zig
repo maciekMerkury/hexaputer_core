@@ -10,4 +10,3 @@ test {
     const testing = std.testing;
     testing.refAllDeclsRecursive(@This());
 }
-
