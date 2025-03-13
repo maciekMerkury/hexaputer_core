@@ -21,7 +21,7 @@ pub const Register = enum(u3) {
 };
 
 pub const Registers = struct {
-    const register_count = @typeInfo(Register).Enum.fields.len;
+    const register_count = @typeInfo(Register).@"enum".fields.len;
     _regs: [register_count]Word = .{0} ** register_count,
 
     pub inline fn get(self: *@This(), reg: Register) *Word {

@@ -1,28 +1,30 @@
 const cpu = @import("cpu.zig");
 const std = @import("std");
+const utils = @import("utils.zig");
+const shit = @import("overcomplicated.zig");
 
 pub const InstructionType = enum(u4) {
-    Add,
+    /// stops execution (there are not interupts)
+    Halt = 0,
+    /// The next maths op will be signed
+    Signed,
+
+    Inc = 2,
+    Dec,
+    Not,
+
+    Store = 5,
+    Load,
+    /// normal branch is just Load into ISP
+    BranchIfZero,
+
+    Add = 8,
     Sub,
     Mul,
     Div,
-    Inc,
-    Dec,
-    Signed,
-
     And,
     Or,
-    Not,
-
     Move,
-    Store,
-    Load,
-
-    Branch,
-    BranchIfZero,
-
-    /// stops execution (there are not interupts)
-    Halt,
 };
 
 pub const Instruction = union(InstructionType) {
@@ -99,14 +101,33 @@ pub const Instruction = union(InstructionType) {
 
 pub const BinaryInstruction = packed struct {
     type: InstructionType,
-    data: packed union {
+    data: Data,
+
+    const Data = packed union {
         gen: GeneralInst,
         reg: cpu.Register,
 
         mem: MemoryInst,
         word: cpu.Word,
         none: void,
-    },
+    };
+
+    pub const GeneralInst = packed struct {
+        dst: cpu.Register,
+        is_reg: bool,
+        src: packed union { reg: cpu.Register, constant: cpu.Word },
+
+        pub fn bit_size(self: @This()) usize {
+            var size: usize = @bitSizeOf(@TypeOf(self.dst)) + @bitSizeOf(@TypeOf(self.is_reg));
+            size += if (self.is_reg) @bitSizeOf(@TypeOf(self.src.reg)) else @bitSizeOf(@TypeOf(self.src.constant));
+            return size;
+        }
+    };
+
+    pub const MemoryInst = packed struct {
+        reg: cpu.Register,
+        mem_ptr: cpu.Word,
+    };
 
     const Self = @This();
     /// max length without padding
@@ -126,22 +147,22 @@ pub const BinaryInstruction = packed struct {
         return std.math.divCeil(usize, bit_size, @as(usize, 8)) catch unreachable;
     }
 
-    pub const GeneralInst = packed struct {
-        dst: cpu.Register,
-        is_reg: bool,
-        src: packed union { reg: cpu.Register, constant: cpu.Word },
+    pub fn to_instruction(self: Self) Instruction {
+        const inst = shit.raw_union_to_tagged(
+            InstructionType,
+            BinaryInstruction.Data,
+            Instruction,
+            shitty_convert,
+            self.type,
+            self.data
+        );
+        return inst;
+    }
 
-        pub fn bit_size(self: @This()) usize {
-            var size: usize = @bitSizeOf(@TypeOf(self.dst)) + @bitSizeOf(@TypeOf(self.is_reg));
-            size += if (self.is_reg) @bitSizeOf(@TypeOf(self.src.reg)) else @bitSizeOf(@TypeOf(self.src.constant));
-            return size;
-        }
-    };
-
-    pub const MemoryInst = packed struct {
-        reg: cpu.Register,
-        mem_ptr: cpu.Word,
-    };
+    fn shitty_convert(raw: *const @This().Data, tagged: *Instruction) void {
+        _ = raw;
+        _ = tagged;
+    }
 };
 
 test "BinaryInstruction byte sizes" {
