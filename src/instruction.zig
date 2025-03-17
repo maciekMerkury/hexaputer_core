@@ -191,3 +191,31 @@ fn byte_size(t: InstructionType, is_reg: bool) usize {
 
     return std.math.divCeil(usize, bit_size, @as(usize, 8)) catch unreachable;
 }
+
+test "BinaryInstruction byte sizes" {
+    const testing = std.testing;
+    const expectEqual = testing.expectEqual;
+
+    var inst = BinaryInstruction{ .type = .not, .payload = .{ .reg = .R0 } };
+
+    try expectEqual(@as(usize, 24), @bitSizeOf(BinaryInstruction));
+    try expectEqual(@as(usize, 1), inst.byte_count());
+    inst = .{ .type = .store, .payload = .{ .mem = .{ .reg = .ISP, .ptr = 42 } } };
+    try expectEqual(@as(usize, 3), inst.byte_count());
+    inst = .{ .type = .add, .payload = .{ .reg_reg = .{ .src = .R0, .dst = .R1 } } };
+    try expectEqual(@as(usize, 2), inst.byte_count());
+}
+
+test "Instruction to BinaryInstruction" {
+    const testing = std.testing;
+    const expect = testing.expect;
+
+    var inst = Instruction{ .not = .R0 };
+    try expect(inst.pack().eql(BinaryInstruction{ .type = .not, .payload = .{ .reg = .R0 } }));
+
+    inst = .{ .store = .{ .reg = .R1, .ptr = 42 } };
+    try expect(inst.pack().eql(BinaryInstruction{ .type = .store, .payload = .{ .mem = .{ .reg = .R1, .ptr = 42 } } }));
+
+    inst = .{ .add = .{ .src = .R0, .dst = .R1 } };
+    try expect(inst.pack().eql(BinaryInstruction{ .type = .add, .payload = .{ .reg_reg = .{ .src = .R0, .dst = .R1 } } }));
+}
