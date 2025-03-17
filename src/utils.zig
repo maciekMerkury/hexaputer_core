@@ -39,7 +39,7 @@ test "utils get" {
 }
 
 inline fn field_name_from_type(comptime un: type, comptime field: type) [*:0]const u8 {
-    const fields = switch(@typeInfo(un)) {
+    const fields = switch (@typeInfo(un)) {
         .@"union" => |u| u.fields,
         else => @compileError("expected a union, got " ++ @typeName(un)),
     };
@@ -71,4 +71,3 @@ pub fn raw_union_to_tagged(comptime tagT: type, comptime rawT: type, comptime ta
 
     @compileError("bruh");
 }
-

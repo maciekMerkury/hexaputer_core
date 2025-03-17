@@ -18,4 +18,3 @@ pub fn main() !void {
 
     try bw.flush(); // Don't forget to flush!
 }
-

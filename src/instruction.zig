@@ -36,17 +36,14 @@ pub const Instruction = union(InstructionType) {
         },
 
         fn to_packed(self: *const @This()) BinaryInstruction.GeneralInst {
-            return BinaryInstruction.GeneralInst{
-                .dst = self.dst,
-                .is_reg = self.src == .reg,
-                .src = switch (self.src) {
-                    .reg => |r| .{.reg = r},
-                    .constant => |c| .{.constant = c},
-                }
-            };
+            return BinaryInstruction.GeneralInst{ .dst = self.dst, .is_reg = self.src == .reg, .src = switch (self.src) {
+                .reg => |r| .{ .reg = r },
+                .constant => |c| .{ .constant = c },
+            } };
         }
     };
     pub const MemoryInst = BinaryInstruction.MemoryInst;
+    pub const MaxByteLen = BinaryInstruction.MaxByteLen;
     Halt,
     Signed,
 
@@ -77,9 +74,9 @@ pub const Instruction = union(InstructionType) {
 
         inst.data = switch (self) {
             .Halt, .Signed => undefined,
-            .Inc, .Dec, .Not => |reg| .{.reg = reg},
-            .Store, .Load, .BranchIfZero => |mem| .{.mem = mem},
-            .Add, .Sub, .Mul, .Div, .And, .Or, .Move => |gen| .{.gen = gen.to_packed()},
+            .Inc, .Dec, .Not => |reg| .{ .reg = reg },
+            .Store, .Load, .BranchIfZero => |mem| .{ .mem = mem },
+            .Add, .Sub, .Mul, .Div, .And, .Or, .Move => |gen| .{ .gen = gen.to_packed() },
         };
         std.debug.print("{}\n", .{inst});
 
@@ -134,12 +131,12 @@ pub const BinaryInstruction = packed struct {
     }
 
     pub fn eql(self: Self, other: Self) bool {
-        std.debug.print("self: {}, other: {}\n", .{self, other});
+        std.debug.print("self: {}, other: {}\n", .{ self, other });
         var a: [3]u8 = .{0} ** 3;
         a = @bitCast(self);
         var b: [3]u8 = .{0} ** 3;
         b = @bitCast(self);
-        std.debug.print("a: {any}, b: {any}\n", .{a, b});
+        std.debug.print("a: {any}, b: {any}\n", .{ a, b });
 
         return std.mem.eql(u8, a[0..self.byte_size()], b[0..other.byte_size()]);
     }
@@ -164,7 +161,7 @@ test "BinaryInstruction byte sizes" {
 
     try expectEqual(@as(usize, 24), @bitSizeOf(BinaryInstruction));
     try expectEqual(@as(usize, 1), inst.byte_size());
-    inst = .{.type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } }};
+    inst = .{ .type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } } };
     try expectEqual(@as(usize, 3), inst.byte_size());
     inst = .{ .type = .Add, .data = .{ .gen = .{ .dst = .R0, .is_reg = true, .src = .{ .reg = .R1 } } } };
     try expectEqual(@as(usize, 2), inst.byte_size());
@@ -174,18 +171,12 @@ test "converting Instruction to BinaryInstruction" {
     const testing = std.testing;
     const expect = testing.expect;
 
-    var inst = Instruction { .Not = .R0 };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(),
-            BinaryInstruction{ .type = .Not, .data = .{ .reg = .R0 } }
-    ));
+    var inst = Instruction{ .Not = .R0 };
+    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Not, .data = .{ .reg = .R0 } }));
 
     inst = .{ .Store = .{ .reg = .ISP, .mem_ptr = 42 } };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(),
-            BinaryInstruction{.type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } }}
-    ));
+    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } } }));
 
     inst = .{ .Add = .{ .dst = .R0, .src = .{ .reg = .R1 } } };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), 
-            BinaryInstruction{ .type = .Add, .data = .{ .gen = .{ .dst = .R0, .is_reg = true, .src = .{ .reg = .R1 } } } }
-    ));
+    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Add, .data = .{ .gen = .{ .dst = .R0, .is_reg = true, .src = .{ .reg = .R1 } } } }));
 }

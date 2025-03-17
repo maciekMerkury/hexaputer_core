@@ -14,5 +14,3 @@ pub fn raw_union_to_tagged(comptime tagT: type, comptime rawT: type, comptime ta
         }
     }
 }
-
-

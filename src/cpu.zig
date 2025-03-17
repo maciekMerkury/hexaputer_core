@@ -3,6 +3,7 @@ const Allocator = std.mem.Allocator;
 const utils = @import("utils.zig");
 
 pub const Instruction = @import("instruction.zig").Instruction;
+pub const BinaryInstruction = @import("instruction.zig").BinaryInstruction;
 
 pub const Word = u16;
 
@@ -43,7 +44,7 @@ pub const CPU = struct {
     }
 
     /// moves isp to after the inst
-    fn next_inst(self: *@This()) !Instruction {
+    fn next_inst(self: *@This()) !BinaryInstruction {
         const isp = self.regs.get(.ISP);
         var buf: u8 align(@alignOf(Instruction)) = (try utils.get(self.mem, isp.*)).*;
 
@@ -60,7 +61,7 @@ pub const CPU = struct {
 
     /// moves isp to after the inst
     fn add_inst(self: *@This(), inst: Instruction) !void {
-        const tmp: [Instruction.MaxByteLen]u8 = @bitCast(inst);
+        const tmp: [Instruction.MaxByteLen]u8 = @bitCast(inst.to_binary_instruction());
         const len = inst.byte_size();
         const isp = self.regs.get(.ISP);
 
@@ -80,19 +81,12 @@ test "one inst next_inst" {
     try cpu.init(1, &alloc);
     defer cpu.deinit(&alloc);
 
-    const inst: Instruction = .{ .type = .Halt, .data = undefined };
+    const inst: Instruction = .Halt;
     try cpu.add_inst(inst);
     cpu.regs = .{};
 
     const res = try cpu.next_inst();
-    try testing.expect(res.type == .Halt);
-}
-
-fn are_insts_equal(a: Instruction, b: Instruction) bool {
-    const bufa: [3]u8 = @bitCast(a);
-    const bufb: [3]u8 = @bitCast(b);
-
-    return std.mem.eql(u8, bufa[0..a.byte_size()], bufb[0..b.byte_size()]);
+    try testing.expect(res == .Halt);
 }
 
 test "more complex next_inst" {
@@ -102,10 +96,10 @@ test "more complex next_inst" {
     try cpu.init(32, &alloc);
     defer cpu.deinit(&alloc);
 
-    const insts: [2]Instruction = .{
-        .{ .type = .Move, .data = .{ .gen = .{ .dst = .R0, .is_reg = false, .src = .{ .constant = 42 } } } },
-        .{ .type = .Inc, .data = .{ .reg = .R1 } },
-        // .{ .type = .Add, .data = .{ .gen = .{ .src = .{ .reg = .R1 }, .is_reg = false, .dst = .R0 } } },
+    const insts: [3]Instruction = .{
+        .Move = .{ .dst = .R0, .src = .{ .constant = 42 } },
+        .Inc = .R1,
+        .Add = .{ .src = .{ .reg = .R1 }, .dst = .R0 },
     };
 
     for (insts) |inst| {
@@ -115,6 +109,6 @@ test "more complex next_inst" {
     cpu.regs = .{};
 
     for (insts) |inst| {
-        try testing.expect(are_insts_equal(try cpu.next_inst(), inst));
+        try testing.expect(inst.to_binary_instruction().eql(cpu.next_inst()));
     }
 }
