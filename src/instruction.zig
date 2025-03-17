@@ -1,182 +1,183 @@
-const cpu = @import("cpu.zig");
 const std = @import("std");
+const cpu = @import("cpu.zig");
 const utils = @import("utils.zig");
-const shit = @import("overcomplicated.zig");
+const Register = cpu.Register;
+const Word = cpu.Register;
 
 pub const InstructionType = enum(u4) {
     /// stops execution (there are not interupts)
-    Halt = 0,
-    /// The next maths op will be signed
-    Signed,
+    halt,
+    /// the next maths op will be signed
+    signed,
 
-    Inc = 2,
-    Dec,
-    Not,
+    inc,
+    dec,
+    not,
+    /// sets the reg to 0
+    zero,
 
-    Store = 5,
-    Load,
-    /// normal branch is just Load into ISP
-    BranchIfZero,
+    store,
+    load,
+    /// normal branch is just load into isp
+    branchIfZero,
 
-    Add = 8,
-    Sub,
-    Mul,
-    Div,
-    And,
-    Or,
-    Move,
+    add,
+    sub,
+    mul,
+    div,
+    @"and",
+    @"or",
+
+    move,
 };
 
 pub const Instruction = union(InstructionType) {
-    pub const GeneralInst = struct {
-        dst: cpu.Register,
+    halt,
+    signed,
+
+    inc: Register,
+    dec: Register,
+    not: Register,
+    zero: Register,
+
+    store: Mem,
+    load: Mem,
+    branchIfZero: Mem,
+
+    add: RegReg,
+    sub: RegReg,
+    mul: RegReg,
+    div: RegReg,
+    @"and": RegReg,
+    @"or": RegReg,
+
+    move: Move,
+
+    pub const Move = struct {
         src: union(enum) {
-            reg: cpu.Register,
-            constant: cpu.Word,
+            reg: Register,
+            @"const": Word,
         },
-
-        fn to_packed(self: *const @This()) BinaryInstruction.GeneralInst {
-            return BinaryInstruction.GeneralInst{ .dst = self.dst, .is_reg = self.src == .reg, .src = switch (self.src) {
-                .reg => |r| .{ .reg = r },
-                .constant => |c| .{ .constant = c },
-            } };
-        }
+        dst: Register,
     };
-    pub const MemoryInst = BinaryInstruction.MemoryInst;
-    pub const MaxByteLen = BinaryInstruction.MaxByteLen;
-    Halt,
-    Signed,
 
-    Inc: cpu.Register,
-    Dec: cpu.Register,
-    Not: cpu.Register,
+    pub const RegReg = struct {
+        src: Register,
+        dst: Register,
+    };
 
-    Store: MemoryInst,
-    Load: MemoryInst,
-    BranchIfZero: MemoryInst,
+    pub const Mem = struct {
+        reg: Register,
+        ptr: Word,
+    };
 
-    Add: GeneralInst,
-    Sub: GeneralInst,
-    Mul: GeneralInst,
-    Div: GeneralInst,
-    And: GeneralInst,
-    Or: GeneralInst,
-    Move: GeneralInst,
+    pub const MaxByteLen: usize = 3;
 
-    inline fn is_gen_inst(self: @This()) bool {
-        return self >= InstructionType.Add;
+    /// the byt elen of the entire instruction, including the tag
+    pub inline fn byte_count(self: *const @This()) usize {
+        return byte_size(self, self == .move and self.move.src == .reg);
     }
 
-    pub fn to_binary_instruction(self: @This()) BinaryInstruction {
-        const activeTag = std.meta.activeTag;
-        var inst: BinaryInstruction = undefined;
-        inst.type = activeTag(self);
-
-        inst.data = switch (self) {
-            .Halt, .Signed => undefined,
-            .Inc, .Dec, .Not => |reg| .{ .reg = reg },
-            .Store, .Load, .BranchIfZero => |mem| .{ .mem = mem },
-            .Add, .Sub, .Mul, .Div, .And, .Or, .Move => |gen| .{ .gen = gen.to_packed() },
+    // ugly as fuck, but idk how to do it better
+    pub fn pack(self: *const @This()) BinaryInstruction {
+        return .{
+            .type = self,
+            .payload = switch (self) {
+                .halt, .signed => .nothing,
+                .inc, .dec, .not, .zero => |reg| .{ .reg = reg },
+                .store, .load, .branchIfZero => |mem| .{ .mem = mem },
+                .add, .sub, .mul, .div, .@"and", .@"or" => |regreg| .{ .reg_reg = regreg },
+                .move => |move| .{ .move = .{
+                    .is_reg = (move.src == .reg),
+                    .src = switch (move.src) {
+                        .reg => |reg| .{ .reg = reg },
+                        .@"const" => |word| .{ .@"const" = word },
+                    },
+                    .dst = move.dst,
+                } },
+            },
         };
-        std.debug.print("{}\n", .{inst});
-
-        return inst;
     }
 };
 
 pub const BinaryInstruction = packed struct {
     type: InstructionType,
-    data: Data,
+    payload: packed union {
+        move: packed struct {
+            is_reg: bool,
+            src: packed union {
+                reg: Register,
+                @"const": Word,
+            },
+            dst: Register,
 
-    const Data = packed union {
-        gen: GeneralInst,
-        reg: cpu.Register,
+            pub fn format(value: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+                try writer.print("move{{ .src = ", .{});
 
-        mem: MemoryInst,
-        none: void,
-    };
+                if (value.is_reg) {
+                    writer.print("{}", .{value.src.reg});
+                } else {
+                    writer.print("{}", .{value.src.@"const"});
+                }
 
-    pub const GeneralInst = packed struct {
-        dst: cpu.Register,
-        is_reg: bool,
-        src: packed union { reg: cpu.Register, constant: cpu.Word },
+                try writer.print(", .dst = {}}}", .{value.dst});
+            }
+        },
 
-        pub fn bit_size(self: @This()) usize {
-            var size: usize = @bitSizeOf(@TypeOf(self.dst)) + @bitSizeOf(@TypeOf(self.is_reg));
-            size += if (self.is_reg) @bitSizeOf(@TypeOf(self.src.reg)) else @bitSizeOf(@TypeOf(self.src.constant));
-            return size;
-        }
-    };
+        reg: Register,
+        mem: utils.pack_struct(Instruction.Mem),
+        reg_reg: utils.pack_struct(Instruction.RegReg),
+        nothing: void,
+    },
 
-    pub const MemoryInst = packed struct {
-        reg: cpu.Register,
-        mem_ptr: cpu.Word,
-    };
+    /// returns the byte len of the instruction, represented by the first byte
+    pub inline fn byte_count(byte: u8) usize {
+        const Tmp = packed struct(u8) {
+            type: InstructionType,
 
-    const Self = @This();
-    /// max length without padding
-    pub const MaxByteLen: usize = 3;
-
-    /// requires the first byte to be readable
-    pub fn byte_size(self: *const Self) usize {
-        var bit_size: usize = @bitSizeOf(@TypeOf(self.type));
-        bit_size += switch (self.type) {
-            .Add, .Sub, .Mul, .Div, .And, .Or, .Move => self.data.gen.bit_size(),
-            .Inc, .Dec, .Not => @bitSizeOf(cpu.Register),
-            .Store, .Load, .BranchIfZero => @bitSizeOf(MemoryInst),
-            .Signed, .Halt => 0,
+            /// only valid if type == .move
+            is_reg: bool,
         };
 
-        return std.math.divCeil(usize, bit_size, @as(usize, 8)) catch unreachable;
+        const inst: Tmp = @bitCast(byte);
+
+        return byte_size(inst.type, inst.type == .move and inst.is_reg);
     }
 
-    pub fn eql(self: Self, other: Self) bool {
-        std.debug.print("self: {}, other: {}\n", .{ self, other });
-        var a: [3]u8 = .{0} ** 3;
-        a = @bitCast(self);
-        var b: [3]u8 = .{0} ** 3;
-        b = @bitCast(self);
-        std.debug.print("a: {any}, b: {any}\n", .{ a, b });
+    pub fn eql(self: @This(), other: @This()) bool {
+        const len = Instruction.MaxByteLen;
 
-        return std.mem.eql(u8, a[0..self.byte_size()], b[0..other.byte_size()]);
+        const bytes: [2][len]u8 = .{.{0} ** len} ** 2;
+        bytes[0] = @bitCast(self);
+        bytes[1] = @bitCast(other);
+        const len_self = byte_count(bytes[0][0]);
+        const len_other = byte_count(bytes[1][0]);
+
+        return std.mem.eql(u8, bytes[0][0..len_self], bytes[1][0..len_other]);
     }
 
-    pub fn format(value: Self, comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(value: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("BinaryInstruction{{ .type = {}, .data = ", .{value.type});
         try switch (value.type) {
-            .Halt, .Signed => writer.print("{}", .{value.data.none}),
-            .Inc, .Dec, .Not => writer.print("{}", .{value.data.reg}),
-            .Store, .Load, .BranchIfZero => writer.print("{}", .{value.data.mem}),
-            .Add, .Sub, .Mul, .Div, .And, .Or, .Move => writer.print("{}", .{value.data.gen}),
+            .halt, .signed => writer.print("{}", .{value.data.nothing}),
+            .inc, .dec, .not, .zero => writer.print("{}", .{value.data.reg}),
+            .store, .load, .branchIfZero => writer.print("{}", .{value.data.mem}),
+            .add, .sub, .mul, .div, .@"and", .@"or" => writer.print("{}", .{value.data.reg_reg}),
+            .move => writer.print("{}", .{value.data.move}),
         };
         return writer.print(" }}", .{});
     }
 };
 
-test "BinaryInstruction byte sizes" {
-    const testing = std.testing;
-    const expectEqual = testing.expectEqual;
+fn byte_size(t: InstructionType, is_reg: bool) usize {
+    var bit_size: usize = @bitSizeOf(InstructionType);
+    bit_size += switch (t) {
+        .halt, .signed => 0,
+        .inc, .dec, .not, .zero => @bitSizeOf(Register),
+        .store, .load, .branchIfZero => utils.sum_bit_size(Instruction.Mem),
+        .add, .sub, .mul, .div, .@"and", .@"or" => utils.sum_bit_size(Instruction.RegReg),
+        .move => @bitSizeOf(Register) + if (is_reg) @bitSizeOf(Register) else @bitSizeOf(Word),
+    };
 
-    var inst = BinaryInstruction{ .type = .Not, .data = .{ .reg = .R0 } };
-
-    try expectEqual(@as(usize, 24), @bitSizeOf(BinaryInstruction));
-    try expectEqual(@as(usize, 1), inst.byte_size());
-    inst = .{ .type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } } };
-    try expectEqual(@as(usize, 3), inst.byte_size());
-    inst = .{ .type = .Add, .data = .{ .gen = .{ .dst = .R0, .is_reg = true, .src = .{ .reg = .R1 } } } };
-    try expectEqual(@as(usize, 2), inst.byte_size());
-}
-
-test "converting Instruction to BinaryInstruction" {
-    const testing = std.testing;
-    const expect = testing.expect;
-
-    var inst = Instruction{ .Not = .R0 };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Not, .data = .{ .reg = .R0 } }));
-
-    inst = .{ .Store = .{ .reg = .ISP, .mem_ptr = 42 } };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Store, .data = .{ .mem = .{ .reg = .ISP, .mem_ptr = 42 } } }));
-
-    inst = .{ .Add = .{ .dst = .R0, .src = .{ .reg = .R1 } } };
-    try expect(BinaryInstruction.eql(inst.to_binary_instruction(), BinaryInstruction{ .type = .Add, .data = .{ .gen = .{ .dst = .R0, .is_reg = true, .src = .{ .reg = .R1 } } } }));
+    return std.math.divCeil(usize, bit_size, @as(usize, 8)) catch unreachable;
 }

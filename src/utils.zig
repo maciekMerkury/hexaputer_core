@@ -38,6 +38,37 @@ test "utils get" {
     try testing.expect(c.* == e[1]);
 }
 
+pub inline fn sum_bit_size(comptime T: type) usize {
+    const info = @typeInfo(T);
+
+    if (info != .@"struct") {
+        @compileError(@typeName(T) ++ " is not a struct");
+    }
+
+    var bit_size: usize = 0;
+
+    inline for (info.@"struct".fields) |f| {
+        bit_size += @bitSizeOf(f.type);
+    }
+
+    return bit_size;
+}
+
+pub inline fn pack_struct(comptime T: type) type {
+    var info = @typeInfo(T);
+
+    if (info != .@"struct") {
+        @compileError(@typeName(T) ++ " is not a struct");
+    }
+    if (info.@"struct".layout == .@"extern") {
+        @compileError("extern structs not supported");
+    }
+
+    info.@"struct".layout = .@"packed";
+
+    return @Type(info);
+}
+
 inline fn field_name_from_type(comptime un: type, comptime field: type) [*:0]const u8 {
     const fields = switch (@typeInfo(un)) {
         .@"union" => |u| u.fields,
