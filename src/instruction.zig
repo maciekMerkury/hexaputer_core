@@ -2,7 +2,7 @@ const std = @import("std");
 const cpu = @import("cpu.zig");
 const utils = @import("utils.zig");
 const Register = cpu.Register;
-const Word = cpu.Register;
+const Word = cpu.Word;
 
 pub const InstructionType = enum(u4) {
     /// stops execution (there are not interupts)
@@ -75,18 +75,19 @@ pub const Instruction = union(InstructionType) {
 
     /// the byt elen of the entire instruction, including the tag
     pub inline fn byte_count(self: *const @This()) usize {
-        return byte_size(self, self == .move and self.move.src == .reg);
+        return byte_size(self.*, self.* == .move and self.move.src == .reg);
     }
 
     // ugly as fuck, but idk how to do it better
     pub fn pack(self: *const @This()) BinaryInstruction {
+        const Payload = BinaryInstruction.Payload;
         return .{
-            .type = self,
-            .payload = switch (self) {
-                .halt, .signed => .nothing,
+            .type = self.*,
+            .payload = switch (self.*) {
+                .halt, .signed => undefined,
                 .inc, .dec, .not, .zero => |reg| .{ .reg = reg },
-                .store, .load, .branchIfZero => |mem| .{ .mem = mem },
-                .add, .sub, .mul, .div, .@"and", .@"or" => |regreg| .{ .reg_reg = regreg },
+                .store, .load, .branchIfZero => |mem| .{ .mem = utils.copy(mem, @FieldType(Payload, "mem")) },
+                .add, .sub, .mul, .div, .@"and", .@"or" => |regreg| .{ .reg_reg = utils.copy(regreg, @FieldType(Payload, "reg_reg")) },
                 .move => |move| .{ .move = .{
                     .is_reg = (move.src == .reg),
                     .src = switch (move.src) {
@@ -102,7 +103,8 @@ pub const Instruction = union(InstructionType) {
 
 pub const BinaryInstruction = packed struct {
     type: InstructionType,
-    payload: packed union {
+    payload: Payload,
+    pub const Payload = packed union {
         move: packed struct {
             is_reg: bool,
             src: packed union {
@@ -128,7 +130,7 @@ pub const BinaryInstruction = packed struct {
         mem: utils.pack_struct(Instruction.Mem),
         reg_reg: utils.pack_struct(Instruction.RegReg),
         nothing: void,
-    },
+    };
 
     /// returns the byte len of the instruction, represented by the first byte
     pub inline fn byte_count(byte: u8) usize {
@@ -137,6 +139,7 @@ pub const BinaryInstruction = packed struct {
 
             /// only valid if type == .move
             is_reg: bool,
+            _: u3,
         };
 
         const inst: Tmp = @bitCast(byte);
@@ -147,7 +150,7 @@ pub const BinaryInstruction = packed struct {
     pub fn eql(self: @This(), other: @This()) bool {
         const len = Instruction.MaxByteLen;
 
-        const bytes: [2][len]u8 = .{.{0} ** len} ** 2;
+        var bytes: [2][len]u8 = .{.{0} ** len} ** 2;
         bytes[0] = @bitCast(self);
         bytes[1] = @bitCast(other);
         const len_self = byte_count(bytes[0][0]);
@@ -176,7 +179,7 @@ fn byte_size(t: InstructionType, is_reg: bool) usize {
         .inc, .dec, .not, .zero => @bitSizeOf(Register),
         .store, .load, .branchIfZero => utils.sum_bit_size(Instruction.Mem),
         .add, .sub, .mul, .div, .@"and", .@"or" => utils.sum_bit_size(Instruction.RegReg),
-        .move => @bitSizeOf(Register) + if (is_reg) @bitSizeOf(Register) else @bitSizeOf(Word),
+        .move => @as(usize, @bitSizeOf(Register)) + if (is_reg) @as(usize, @bitSizeOf(Register)) else @as(usize, @bitSizeOf(Word)),
     };
 
     return std.math.divCeil(usize, bit_size, @as(usize, 8)) catch unreachable;

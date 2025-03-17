@@ -46,9 +46,9 @@ pub const CPU = struct {
     /// moves isp to after the inst
     fn next_inst(self: *@This()) !BinaryInstruction {
         const isp = self.regs.get(.ISP);
-        var buf: u8 align(@alignOf(Instruction)) = (try utils.get(self.mem, isp.*)).*;
+        const buf: u8 = (try utils.get(self.mem, isp.*)).*;
 
-        const len = Instruction.byte_size(@ptrCast(&buf));
+        const len = BinaryInstruction.byte_count(buf);
         if (isp.* + len > self.mem.len) {
             return error.OutOfBounds;
         }
@@ -61,8 +61,8 @@ pub const CPU = struct {
 
     /// moves isp to after the inst
     fn add_inst(self: *@This(), inst: Instruction) !void {
-        const tmp: [Instruction.MaxByteLen]u8 = @bitCast(inst.to_binary_instruction());
-        const len = inst.byte_size();
+        const tmp: [Instruction.MaxByteLen]u8 = @bitCast(inst.pack());
+        const len = inst.byte_count();
         const isp = self.regs.get(.ISP);
 
         if (isp.* + len > self.mem.len) {
@@ -81,12 +81,12 @@ test "one inst next_inst" {
     try cpu.init(1, &alloc);
     defer cpu.deinit(&alloc);
 
-    const inst: Instruction = .Halt;
+    const inst: Instruction = .halt;
     try cpu.add_inst(inst);
     cpu.regs = .{};
 
     const res = try cpu.next_inst();
-    try testing.expect(res == .Halt);
+    try testing.expect(res.type == .halt);
 }
 
 test "more complex next_inst" {
@@ -97,9 +97,9 @@ test "more complex next_inst" {
     defer cpu.deinit(&alloc);
 
     const insts: [3]Instruction = .{
-        .Move = .{ .dst = .R0, .src = .{ .constant = 42 } },
-        .Inc = .R1,
-        .Add = .{ .src = .{ .reg = .R1 }, .dst = .R0 },
+        .{ .move = .{ .src = .{ .@"const" = 42 }, .dst = .R0 } },
+        .{ .inc = .R1 },
+        .{ .add = .{ .src = .R1, .dst = .R0 } },
     };
 
     for (insts) |inst| {
@@ -109,6 +109,6 @@ test "more complex next_inst" {
     cpu.regs = .{};
 
     for (insts) |inst| {
-        try testing.expect(inst.to_binary_instruction().eql(cpu.next_inst()));
+        try testing.expect(inst.pack().eql(try cpu.next_inst()));
     }
 }

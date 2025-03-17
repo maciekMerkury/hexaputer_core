@@ -65,40 +65,34 @@ pub inline fn pack_struct(comptime T: type) type {
     }
 
     info.@"struct".layout = .@"packed";
+    var fields: [info.@"struct".fields.len]std.builtin.Type.StructField = undefined;
+
+    for (0..fields.len) |i| {
+        fields[i] = info.@"struct".fields[i];
+        fields[i].alignment = 0;
+    }
+
+    info.@"struct".fields = &fields;
 
     return @Type(info);
 }
 
-inline fn field_name_from_type(comptime un: type, comptime field: type) [*:0]const u8 {
-    const fields = switch (@typeInfo(un)) {
-        .@"union" => |u| u.fields,
-        else => @compileError("expected a union, got " ++ @typeName(un)),
-    };
+pub inline fn copy(src: anytype, comptime dst: type) dst {
+    const src_info = @typeInfo(@TypeOf(src));
+    const dst_info = @typeInfo(dst);
 
-    for (fields) |f| {
-        if (f.type == field) {
-            return f.name;
-        }
+    if (src_info != .@"struct" or dst_info != .@"struct") {
+        @compileLog(src_info);
+        @compileLog(dst_info);
+        @compileError("arguments to copy must be both structs");
     }
 
-    @compileError("the union " ++ @typeName(un) ++ " does not have a field of type " ++ @typeName(field));
-}
+    var tmp: dst = undefined;
 
-pub fn raw_union_to_tagged(comptime tagT: type, comptime rawT: type, comptime taggedT: type, tag: tagT, raw: rawT) taggedT {
-    const Tag = std.meta.Tag;
-    if (tagT != Tag(taggedT)) {
-        @compileError("tag of the raw union is not the same as the taggged; " ++ @typeName(tagT) ++ " != " ++ @typeName(Tag(taggedT)));
+    inline for (src_info.@"struct".fields) |field| {
+        const name = field.name;
+        @field(tmp, name) = @field(src, name);
     }
 
-    inline for (@typeInfo(tagT).@"enum".fields) |tag_field| {
-        if (@intFromEnum(tag) == tag_field.value) {
-            var tagged: taggedT = undefined;
-            const T = @TypeOf(@field(tagged, tag_field.name));
-            @field(tagged, tag_field.name) = @field(raw, field_name_from_type(rawT, T));
-
-            return tagged;
-        }
-    }
-
-    @compileError("bruh");
+    return tmp;
 }
