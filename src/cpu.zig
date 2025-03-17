@@ -48,7 +48,7 @@ pub const CPU = struct {
         const isp = self.regs.get(.ISP);
         const buf: u8 = (try utils.get(self.mem, isp.*)).*;
 
-        const len = BinaryInstruction.byte_count(buf);
+        const len = BinaryInstruction.bytes_left(buf) + 1;
         if (isp.* + len > self.mem.len) {
             return error.OutOfBounds;
         }

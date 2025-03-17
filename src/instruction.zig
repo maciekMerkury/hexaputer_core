@@ -71,7 +71,12 @@ pub const Instruction = union(InstructionType) {
         ptr: Word,
     };
 
-    pub const MaxByteLen: usize = 3;
+    pub const MaxByteLen: usize = @bitSizeOf(BinaryInstruction) / 8;
+    comptime {
+        if (MaxByteLen != 3) {
+            @compileError("Instruction.MaxByteLen must aways be 3, but is " ++ MaxByteLen);
+        }
+    }
 
     /// the byt elen of the entire instruction, including the tag
     pub inline fn byte_count(self: *const @This()) usize {
@@ -132,8 +137,8 @@ pub const BinaryInstruction = packed struct {
         nothing: void,
     };
 
-    /// returns the byte len of the instruction, represented by the first byte
-    pub inline fn byte_count(byte: u8) usize {
+    /// returns the number of bytes that have to be read to read the entire instruction
+    pub inline fn bytes_left(byte: u8) usize {
         const Tmp = packed struct(u8) {
             type: InstructionType,
 
@@ -144,7 +149,11 @@ pub const BinaryInstruction = packed struct {
 
         const inst: Tmp = @bitCast(byte);
 
-        return byte_size(inst.type, inst.type == .move and inst.is_reg);
+        return byte_size(inst.type, inst.type == .move and inst.is_reg) - 1;
+    }
+
+    pub inline fn byte_count(self: *const @This()) usize {
+        return byte_size(self.type, self.type == .move and self.payload.move.is_reg);
     }
 
     pub fn eql(self: @This(), other: @This()) bool {
@@ -153,10 +162,8 @@ pub const BinaryInstruction = packed struct {
         var bytes: [2][len]u8 = .{.{0} ** len} ** 2;
         bytes[0] = @bitCast(self);
         bytes[1] = @bitCast(other);
-        const len_self = byte_count(bytes[0][0]);
-        const len_other = byte_count(bytes[1][0]);
 
-        return std.mem.eql(u8, bytes[0][0..len_self], bytes[1][0..len_other]);
+        return std.mem.eql(u8, bytes[0][0..self.byte_count()], bytes[1][0..self.byte_count()]);
     }
 
     pub fn format(value: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
