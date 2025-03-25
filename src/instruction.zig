@@ -9,18 +9,18 @@ pub const InstructionType = enum(u4) {
     halt,
     /// the next maths op will be signed
     signed,
+    /// switches between memory addressing and mmio
+    address_switch,
 
     inc,
     dec,
     not,
-    /// sets the reg to 0
-    zero,
 
-    store,
-    load,
     /// normal branch is just load into isp
     branchIfZero,
 
+    store,
+    load,
     add,
     sub,
     mul,
@@ -34,16 +34,16 @@ pub const InstructionType = enum(u4) {
 pub const Instruction = union(InstructionType) {
     halt,
     signed,
+    address_switch,
 
     inc: Register,
     dec: Register,
     not: Register,
-    zero: Register,
 
-    store: Mem,
-    load: Mem,
     branchIfZero: Mem,
 
+    store: RegReg,
+    load: RegReg,
     add: RegReg,
     sub: RegReg,
     mul: RegReg,
@@ -89,10 +89,10 @@ pub const Instruction = union(InstructionType) {
         return .{
             .type = self.*,
             .payload = switch (self.*) {
-                .halt, .signed => undefined,
-                .inc, .dec, .not, .zero => |reg| .{ .reg = reg },
-                .store, .load, .branchIfZero => |mem| .{ .mem = utils.copy(mem, @FieldType(Payload, "mem")) },
-                .add, .sub, .mul, .div, .@"and", .@"or" => |regreg| .{ .reg_reg = utils.copy(regreg, @FieldType(Payload, "reg_reg")) },
+                .halt, .signed, .address_switch => undefined,
+                .inc, .dec, .not => |reg| .{ .reg = reg },
+                .branchIfZero => |mem| .{ .mem = utils.structs.copy(mem, @FieldType(Payload, "mem")) },
+                .store, .load, .add, .sub, .mul, .div, .@"and", .@"or" => |regreg| .{ .reg_reg = utils.structs.copy(regreg, @FieldType(Payload, "reg_reg")) },
                 .move => |move| .{ .move = .{
                     .is_reg = (move.src == .reg),
                     .src = switch (move.src) {
@@ -122,9 +122,9 @@ pub const BinaryInstruction = packed struct {
                 try writer.print("move{{ .src = ", .{});
 
                 if (value.is_reg) {
-                    writer.print("{}", .{value.src.reg});
+                    try writer.print("{}", .{value.src.reg});
                 } else {
-                    writer.print("{}", .{value.src.@"const"});
+                    try writer.print("{}", .{value.src.@"const"});
                 }
 
                 try writer.print(", .dst = {}}}", .{value.dst});
@@ -132,8 +132,8 @@ pub const BinaryInstruction = packed struct {
         },
 
         reg: Register,
-        mem: utils.pack_struct(Instruction.Mem),
-        reg_reg: utils.pack_struct(Instruction.RegReg),
+        mem: utils.structs.pack_struct(Instruction.Mem),
+        reg_reg: utils.structs.pack_struct(Instruction.RegReg),
         nothing: void,
     };
 
@@ -157,35 +157,44 @@ pub const BinaryInstruction = packed struct {
     }
 
     pub fn eql(self: @This(), other: @This()) bool {
-        const len = Instruction.MaxByteLen;
+        if (self.type != other.type)
+            return false;
 
-        var bytes: [2][len]u8 = .{.{0} ** len} ** 2;
-        bytes[0] = @bitCast(self);
-        bytes[1] = @bitCast(other);
+        return switch (self.type) {
+            .halt, .signed, .address_switch => true,
+            .inc, .dec, .not => self.payload.reg == other.payload.reg,
+            .branchIfZero => std.meta.eql(self.payload.mem, other.payload.mem),
 
-        return std.mem.eql(u8, bytes[0][0..self.byte_count()], bytes[1][0..self.byte_count()]);
+            .store, .load, .add, .sub, .mul, .div, .@"and", .@"or" => std.meta.eql(self.payload.reg_reg, other.payload.reg_reg),
+
+            .move => std.meta.eql(self.payload.move, other.payload.move),
+        };
     }
 
     pub fn format(value: @This(), comptime _: []const u8, _: std.fmt.FormatOptions, writer: anytype) !void {
-        try writer.print("BinaryInstruction{{ .type = {}, .data = ", .{value.type});
+        try writer.print("BinaryInstruction{{ .type = {}, .payload = ", .{value.type});
         try switch (value.type) {
-            .halt, .signed => writer.print("{}", .{value.data.nothing}),
-            .inc, .dec, .not, .zero => writer.print("{}", .{value.data.reg}),
-            .store, .load, .branchIfZero => writer.print("{}", .{value.data.mem}),
-            .add, .sub, .mul, .div, .@"and", .@"or" => writer.print("{}", .{value.data.reg_reg}),
-            .move => writer.print("{}", .{value.data.move}),
+            .halt, .signed, .address_switch => writer.print("{}", .{value.payload.nothing}),
+            .inc, .dec, .not => writer.print("{}", .{value.payload.reg}),
+            .branchIfZero => writer.print("{}", .{value.payload.mem}),
+            .store, .load, .add, .sub, .mul, .div, .@"and", .@"or" => writer.print("{}", .{value.payload.reg_reg}),
+            .move => writer.print("{}", .{value.payload.move}),
         };
         return writer.print(" }}", .{});
     }
+
+    // pub fn upack(self: *const @This()) Instruction {
+    //     std.builtin.Type.UnionField
+    // }
 };
 
 fn byte_size(t: InstructionType, is_reg: bool) usize {
     var bit_size: usize = @bitSizeOf(InstructionType);
     bit_size += switch (t) {
-        .halt, .signed => 0,
-        .inc, .dec, .not, .zero => @bitSizeOf(Register),
-        .store, .load, .branchIfZero => utils.sum_bit_size(Instruction.Mem),
-        .add, .sub, .mul, .div, .@"and", .@"or" => utils.sum_bit_size(Instruction.RegReg),
+        .halt, .signed, .address_switch => 0,
+        .inc, .dec, .not => @bitSizeOf(Register),
+        .branchIfZero => utils.structs.sum_bit_size(Instruction.Mem),
+        .store, .load, .add, .sub, .mul, .div, .@"and", .@"or" => utils.structs.sum_bit_size(Instruction.RegReg),
         .move => @as(usize, @bitSizeOf(Register)) + if (is_reg) @as(usize, @bitSizeOf(Register)) else @as(usize, @bitSizeOf(Word)),
     };
 
@@ -200,9 +209,12 @@ test "BinaryInstruction byte sizes" {
 
     try expectEqual(@as(usize, 24), @bitSizeOf(BinaryInstruction));
     try expectEqual(@as(usize, 1), inst.byte_count());
-    inst = .{ .type = .store, .payload = .{ .mem = .{ .reg = .ISP, .ptr = 42 } } };
+    inst = .{ .type = .move, .payload = .{ .move = .{ .src = .{ .@"const" = 42 }, .is_reg = false, .dst = .R1 } } };
     try expectEqual(@as(usize, 3), inst.byte_count());
     inst = .{ .type = .add, .payload = .{ .reg_reg = .{ .src = .R0, .dst = .R1 } } };
+    try expectEqual(@as(usize, 2), inst.byte_count());
+
+    inst = .{ .type = .store, .payload = .{ .reg_reg = .{ .src = .R0, .dst = .R1 } } };
     try expectEqual(@as(usize, 2), inst.byte_count());
 }
 
@@ -213,8 +225,8 @@ test "Instruction to BinaryInstruction" {
     var inst = Instruction{ .not = .R0 };
     try expect(inst.pack().eql(BinaryInstruction{ .type = .not, .payload = .{ .reg = .R0 } }));
 
-    inst = .{ .store = .{ .reg = .R1, .ptr = 42 } };
-    try expect(inst.pack().eql(BinaryInstruction{ .type = .store, .payload = .{ .mem = .{ .reg = .R1, .ptr = 42 } } }));
+    inst = .{ .store = .{ .src = .R1, .dst = .R2 } };
+    try expect(inst.pack().eql(BinaryInstruction{ .type = .store, .payload = .{ .reg_reg = .{ .src = .R1, .dst = .R2 } } }));
 
     inst = .{ .add = .{ .src = .R0, .dst = .R1 } };
     try expect(inst.pack().eql(BinaryInstruction{ .type = .add, .payload = .{ .reg_reg = .{ .src = .R0, .dst = .R1 } } }));
