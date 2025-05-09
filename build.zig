@@ -7,11 +7,21 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const lib = b.addStaticLibrary(.{
-        .name = "core_light",
-        .root_source_file = b.path("src/root.zig"),
+    const utils_mod = b.dependency("utils", .{
         .target = target,
         .optimize = optimize,
+    }).module("utils");
+
+    const hexaputer_core_mod = b.addModule("hexaputer_core", .{
+        .optimize = optimize,
+        .target = target,
+        .root_source_file = b.path("src/root.zig"),
+    });
+    hexaputer_core_mod.addImport("utils", utils_mod);
+
+    const lib = b.addStaticLibrary(.{
+        .name = "hexaputer_core",
+        .root_module = hexaputer_core_mod,
     });
     b.installArtifact(lib);
 

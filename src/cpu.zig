@@ -2,8 +2,8 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const utils = @import("utils.zig");
 
-pub const Instruction = @import("instruction.zig").Instruction;
-pub const BinaryInstruction = @import("instruction.zig").BinaryInstruction;
+const Instruction = @import("instruction.zig").Instruction;
+const BinaryInstruction = @import("instruction.zig").BinaryInstruction;
 
 pub const Word = u16;
 
@@ -73,8 +73,12 @@ pub const CPU = struct {
                 @panic("not implemented");
             },
 
-            .inc => self.regs.get(inst.payload.reg).* += 1,
-            .dec => self.regs.get(inst.payload.reg).* -= 1,
+            .inc, .dec => {
+                const reg = self.regs.get(inst.payload.reg);
+
+                reg.* = if (inst.type == .inc) @addWithOverflow(reg.*, 1).@"0" else @subWithOverflow(reg.*, 1).@"0";
+            },
+
             .not => {
                 const reg = self.regs.get(inst.payload.reg);
                 reg.* = ~reg.*;
@@ -93,7 +97,7 @@ pub const CPU = struct {
 
                 const dst_ptr = self.regs.get(reg.dst).*;
 
-                if (dst_ptr + 1 >= self.mem.len) {
+                if (@as(usize, dst_ptr) + 1 >= self.mem.len) {
                     return error.OutOfBounds;
                 }
 
@@ -108,7 +112,7 @@ pub const CPU = struct {
 
                 const src_ptr = self.regs.get(reg.src).*;
 
-                if (src_ptr + 1 >= self.mem.len) {
+                if (@as(usize, src_ptr) + 1 >= self.mem.len) {
                     return error.OutOfBounds;
                 }
 
@@ -125,9 +129,9 @@ pub const CPU = struct {
                 const dst = self.regs.get(reg.dst);
 
                 switch (inst.type) {
-                    .add => dst.* += src,
-                    .sub => dst.* -= src,
-                    .mul => dst.* *= src,
+                    .add => dst.* = @addWithOverflow(dst.*, src).@"0",
+                    .sub => dst.* = @addWithOverflow(dst.*, src).@"0",
+                    .mul => dst.* = @addWithOverflow(dst.*, src).@"0",
                     .div => {
                         if (src == 0) {
                             return error.DivByZero;
